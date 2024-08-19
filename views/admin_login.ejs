@@ -1,0 +1,37 @@
+<%- include("partials/front_pg_header.ejs") %>
+
+<body>
+    <div class="container d-flex justify-content-center align-items-center" style="min-height: 90vh;">
+        <div class="col-md-6">
+            <div class="card" style="padding-right: 36px; padding-top: 18px;">
+                <div class="card-header text-center">
+                    <h3>Admin Login</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Display message area -->
+                    <% if (typeof error !== 'undefined') { %>
+                        <div id="loginMessage" class="alert alert-danger" role="alert">
+                            <%= error %>
+                        </div>
+                    <% } %>
+
+                    <form id="loginForm" method="POST" action="/geofence">
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email address</label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+<%- include("partials/footer.ejs") %>

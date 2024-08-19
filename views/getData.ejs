@@ -1,0 +1,291 @@
+<%- include("partials/front_pg_header.ejs") %>
+<body>
+    <div id="details">
+        <h2 style="margin-bottom: 20px;">User Location</h2>
+        <h4>Username: <span id="username"></span></h4>
+        <h4>Email: <span id="email"></span></h4>
+        <h4>Selected Location: <span id="selectedLocation"></span></h4>
+        <h4>Latitude: <span id="latitude"></span></h4>
+        <h4>Longitude: <span id="longitude"></span></h4>
+        <button id="stoppButton">Stop watching location</button>
+    </div>
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <!-- Firebase Database -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script>
+        const firebaseConfig = {
+        apiKey: "enter api key",
+        authDomain: "enter authDomain",
+        databaseURL: "....",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: "",
+        measurementId: "",
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        var db = firebase.database();
+
+        const userId = "<%= userId %>"; // Get userId from EJS template
+        let coordinates = []; // Declare coordinates globally
+        let currentPosition = {}; // Declare currentPosition globally
+        let wasInsideGeofence = true;
+        let exitTime = null;
+        let reentryTime = null;
+        let email;
+
+        // Query Firebase to get username, email, and selected location
+        var userRef = db.ref('users/' + userId);
+        userRef.once('value', function(snapshot) {
+            if (snapshot.exists()) {
+                const userData = snapshot.val();
+                const username = userData.username;
+                email = userData.email;
+
+                document.getElementById('username').textContent = username;
+                document.getElementById('email').textContent = email;
+
+                // Fetch selected location from URL parameters
+                const urlParams = new URLSearchParams(window.location.search);
+                const selectedLocation = urlParams.get('location');
+                if (selectedLocation) {
+                    document.getElementById('selectedLocation').textContent = selectedLocation;
+                    fetchPolygonCoordinatesFromFirebase(selectedLocation);
+                }
+            } else {
+                console.error('User data not found for userId:', userId);
+            }
+        });
+
+        let watch = true;
+        let intervalId;
+
+        if (!navigator.geolocation) {
+            console.log("Your browser doesn't support geolocation feature!");
+        } else if (watch) {
+            intervalId = setInterval(() => {
+                navigator.geolocation.getCurrentPosition(getPosition);
+            }, 10000);
+        }
+
+        function getPosition(position) {
+            var lat = position.coords.latitude;
+            var long = position.coords.longitude;
+
+            document.getElementById('latitude').textContent = lat;
+            document.getElementById('longitude').textContent = long;
+            console.log(lat);
+            console.log(long);
+
+            // Update currentPosition globally
+            currentPosition = {
+                latitude: lat,
+                longitude: long,
+                timestamp: Date.now()
+            };
+
+            // Push data to Firebase with userId
+            var newPositionRef = db.ref('positions/' + userId).push();
+            newPositionRef.set(currentPosition);
+
+            // Call checkGeofence with the current position
+            checkGeofence(currentPosition);
+        }
+
+        document.getElementById('stoppButton').addEventListener('click', () => {
+            watch = false;
+            clearInterval(intervalId);
+            console.log("Stopped watching location updates.");
+        });
+
+        // Function to fetch polygon coordinates based on locationName
+        function fetchPolygonCoordinatesFromFirebase(locationName) {
+            console.log("Fetching polygon coordinates for location:", locationName);
+            var polygonsRef = db.ref('polygons').orderByChild('locationName').equalTo(locationName);
+            polygonsRef.once('value', function(snapshot) {
+                snapshot.forEach(function(childSnapshot) {
+                    var polygonData = childSnapshot.val();
+                    if (polygonData) {
+                        coordinates = polygonData.coordinates; // Update global coordinates array
+                        console.log("Polygon coordinates fetched:", coordinates);
+                    }
+                });
+            });
+        }
+
+        // Function to send email when geofence event occurs
+            function sendEmail(message) {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/sendEmail'); // Endpoint on your server to send emails
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        console.log('Email sent successfully');
+                    } else {
+                        console.error('Error sending email:', xhr.statusText);
+                    }
+                };
+
+                // Send email and message as JSON payload
+                xhr.send(JSON.stringify({ email: email, message: message }));
+            }
+
+
+        // Function to check geofence
+        function checkGeofence(position) {
+            class Point {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                }
+            }
+
+            let polygon1 = [];
+            const integerCoordinates = coordinates.map(coord => {
+                const [lat, lng] = coord.split(',').map(Number);
+                return [lat, lng];
+            });
+            for (let i = 0; i < integerCoordinates.length; i++) {
+                let obj = new Point(integerCoordinates[i][0], integerCoordinates[i][1]);
+                polygon1.push(obj);
+            }
+
+            let INF = 1000;
+            let n = polygon1.length;
+
+            let p = new Point(position.latitude, position.longitude);
+            let currentTime = position.timestamp;
+
+            if (isInside(polygon1, n, p)) {
+                if (!wasInsideGeofence) {
+                    wasInsideGeofence = true;
+                    reentryTime = currentTime;
+                    let reentryMessage = "Re-entered geofence at:" + new Date(reentryTime).toLocaleString();
+                    console.log(reentryMessage);
+                    sendEmail(reentryMessage);
+                    storeExitReentryTimes(exitTime, reentryTime);
+                    exitTime = null;
+                    reentryTime = null;
+                }
+                console.log("Yes, Inside");
+            } else {
+                if (wasInsideGeofence) {
+                    wasInsideGeofence = false;
+                    exitTime = currentTime;
+                    let exitMessage = "Exited geofence at: " + new Date(exitTime).toLocaleString();
+                    sendEmail(exitMessage);
+                    console.log(exitMessage);
+                }
+                console.log("No, Outside");
+            }
+
+            function orientation(p, q, r) {
+                let val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+                if (val == 0) {
+                    return 0;
+                }
+                return (val > 0) ? 1 : 2;
+            }
+
+            function onSegment(p, q, r) {
+                if (q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) &&
+                    q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y)) {
+                    return true;
+                }
+                return false;
+            }
+
+            function doIntersect(p1, q1, p2, q2) {
+                let o1 = orientation(p1, q1, p2);
+                let o2 = orientation(p1, q1, q2);
+                let o3 = orientation(p2, q2, p1);
+                let o4 = orientation(p2, q2, q1);
+
+                if (o1 != o2 && o3 != o4) {
+                    return true;
+                }
+
+                if (o1 == 0 && onSegment(p1, p2, q1)) {
+                    return true;
+                }
+
+                if (o2 == 0 && onSegment(p1, q2, q1)) {
+                    return true;
+                }
+
+                if (o3 == 0 && onSegment(p2, p1, q2)) {
+                    return true;
+                }
+
+                if (o4 == 0 && onSegment(p2, q1, q2)) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            function isInside(polygon, n, p) {
+                if (n < 3) {
+                    return false;
+                }
+
+                let extreme = new Point(INF, p.y);
+
+                let count = 0, i = 0;
+
+                do {
+                    let next = (i + 1) % n;
+
+                    if (doIntersect(polygon[i], polygon[next], p, extreme)) {
+                        if (orientation(polygon[i], p, polygon[next]) == 0) {
+                            return onSegment(polygon[i], p, polygon[next]);
+                        }
+                        count++;
+                    }
+                    i = next;
+                } while (i != 0);
+
+                return (count % 2 == 1);
+            }
+        }
+
+        function storeExitReentryTimes(exitTime, reentryTime) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const locationName = urlParams.get('location');
+
+            if (exitTime && reentryTime && locationName) {
+                // Get current date in MM-DD-YYYY format
+                const now = new Date();
+                const istOffset = 5.5 * 60 * 60 * 1000; // IST offset in milliseconds
+                const istTime = new Date(now.getTime() + istOffset);
+                const currentDate = istTime.toISOString().slice(0, 10);
+                console.log(currentDate)
+
+                // Reference path in Firebase
+                let eventsRef = db.ref(`geofenceEvents/${userId}/${locationName}/${currentDate}`);
+
+                // Push new event under the current date
+                let newEventRef = eventsRef.push();
+                newEventRef.set({
+                    exitTime: exitTime,
+                    reentryTime: reentryTime
+                }).then(() => {
+                    console.log('Stored exit and reentry times in Firebase');
+                }).catch(error => {
+                    console.error('Error storing exit and reentry times in Firebase:', error);
+                });
+            } else {
+                console.error('Cannot store exit and reentry times because one or both are undefined');
+            }
+        }
+
+    </script>
+</body>
+</html>
+
+<%- include("partials/footer.ejs") %>

@@ -1,0 +1,37 @@
+<%- include("partials/front_pg_header.ejs") %>
+
+    <h3 class="animate__animated animate__backInRight" id="ques">What do You want ?</h3>
+
+    <div class="row row-cols-1 row-cols-md-3 g-4 cards_heading">
+        <div class="col">
+          <div class="card h-100" style="padding-right: 36px;">
+            <div class="card-body">
+              <div class="custom_button">
+                <button class="button-48" role="button" onclick="window.location.href='/auth'"><span class="text"><h5 class="card-title">Track Location</h5></span></button>
+              </div>
+              <p class="card-text" >Fetch the longitude and latitude of your real-time location after signing up or logging in as a registered user.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card h-100" style="padding-right: 36px;">
+            <div class="card-body">
+              <div class="custom_button">
+                <button class="button-48" role="button" onclick="window.location.href='/pinpoint'"><span class="text"><h5 class="card-title">Pinpoint Location</h5></span></button>
+              </div>
+              <p class="card-text">Observe your current location on map and see it change in real-time every few seconds after refreshing the page.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card h-100" style="padding-right: 36px;">
+            <div class="card-body">
+              <div class="custom_button">
+                <button class="button-48" role="button" onclick="window.location.href='/geofence'"><span class="text"><h5 class="card-title">Fetch Data</h5></span></button>
+              </div>
+              <p class="card-text">Retrieve Data for when registered users exit and re-enter in selected geofence area within a certain date range.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+<%- include("partials/footer.ejs") %>

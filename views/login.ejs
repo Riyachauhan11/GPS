@@ -1,0 +1,124 @@
+<%- include("partials/header.ejs") %>
+
+<body>
+    <div class="container d-flex justify-content-center align-items-center" style="min-height: 90vh;">
+        <div class="col-md-6">
+            <div class="card" style="
+            padding-right: 36px;
+            padding-top: 18px;
+        ">
+                <div class="card-header text-center">
+                    <h3>Login</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Display message area -->
+                    <div id="loginMessage" class="alert d-none" role="alert">
+                        <!-- Message will be displayed here -->
+                    </div>
+
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email address</label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="location" class="form-label">Location</label>
+                            <select class="form-control" id="location" name="location" required>
+                                <option value="" disabled selected>Select Location</option>
+                                <!-- Location options will be populated here -->
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <!-- Firebase Realtime Database -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script>
+        const firebaseConfig = {
+        apiKey: "enter api key",
+        authDomain: "enter authDomain",
+        databaseURL: "....",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: "",
+        measurementId: "",
+        };
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        var database = firebase.database();
+
+        // Populate location dropdown
+        function populateLocationDropdown() {
+            var polygonsRef = database.ref('polygons');
+            polygonsRef.once('value', function(snapshot) {
+                var locationDropdown = document.getElementById('location');
+                snapshot.forEach(function(childSnapshot) {
+                    var polygonData = childSnapshot.val();
+                    var locationName = polygonData.locationName;
+                    var option = document.createElement('option');
+                    option.value = locationName;
+                    option.textContent = locationName;
+                    locationDropdown.appendChild(option);
+                });
+            });
+        }
+
+        // Call function to populate location dropdown on page load
+        window.onload = populateLocationDropdown;
+
+        // Handle form submission
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const location = document.getElementById('location').value;
+
+            // Simulate login by fetching user data from Firebase Realtime Database
+            var usersRef = database.ref('users');
+            usersRef.orderByChild('email').equalTo(email).once('value', function(snapshot) {
+                if (snapshot.exists()) {
+                    snapshot.forEach(function(childSnapshot) {
+                        var userData = childSnapshot.val();
+                        var storedPassword = userData.password;
+
+                        // Check if entered password matches stored password (not secure, for demonstration purposes only)
+                        if (password === storedPassword) {
+                            displayMessage('Login successful!', 'success');
+                            // Redirect to getData route with userId
+                            window.location.href = '/getData?userId=' + childSnapshot.key + '&location=' + location
+                        } else {
+                            displayMessage('Incorrect password.', 'danger');
+                        }
+                    });
+                } else {
+                    displayMessage('User not found.', 'danger');
+                }
+            });
+        });
+
+        // Function to display message
+        function displayMessage(message, type) {
+            var messageElement = document.getElementById('loginMessage');
+            messageElement.textContent = message;
+            messageElement.className = 'alert alert-' + type;
+            messageElement.classList.remove('d-none'); // Show the message element
+        }
+    </script>
+
+    <%- include("partials/footer.ejs") %>
+</body>
+</html>

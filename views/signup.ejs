@@ -1,0 +1,120 @@
+<%- include("partials/header.ejs") %>
+
+<body>
+    <div class="container d-flex justify-content-center align-items-center" style="min-height: 90vh;">
+        <div class="col-md-6">
+            <div class="card" style="padding-right: 36px; padding-top: 18px;">
+                <div class="card-header text-center">
+                    <h3>Signup</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Display message area -->
+                    <div id="signupMessage" class="alert d-none" role="alert">
+                        <!-- Message will be displayed here -->
+                    </div>
+
+                    <form id="signupForm">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email address</label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="vehicle" class="form-label">Select Vehicle</label>
+                            <select class="form-select" id="vehicle" name="vehicle" required>
+                                <option value="">Select Vehicle</option>
+                                <option value="VEHICLE_1">Vehicle 1</option>
+                                <option value="VEHICLE_2">Vehicle 2</option>
+                                <option value="VEHICLE_3">Vehicle 3</option>
+                                <option value="VEHICLE_4">Vehicle 4</option>
+                                <option value="VEHICLE_5">Vehicle 5</option>
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Signup</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <!-- Firebase Realtime Database -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "enter api key",
+            authDomain: "enter authDomain",
+            databaseURL: "....",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: "",
+            measurementId: "",
+        };
+
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        var database = firebase.database();
+
+        // Handle form submission
+        document.getElementById('signupForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const vehicle = document.getElementById('vehicle').value;
+
+            // Check if user already exists
+            var usersRef = database.ref('users');
+            usersRef.orderByChild('email').equalTo(email).once('value', function(snapshot) {
+                if (snapshot.exists()) {
+                    displayMessage('User already exists.', 'danger');
+                } else {
+                    // Create new user entry in Firebase Realtime Database
+                    var newUserRef = usersRef.push();
+                    newUserRef.set({
+                        username: username,
+                        email: email,
+                        password: password, // Note: Storing password in plaintext is not secure
+                        vehicle: vehicle
+                        // Add more fields as needed
+                    })
+                    .then(() => {
+                        displayMessage('User signed up successfully!', 'success');
+                        // Redirect to login page after signup
+                        window.location.href = '/login';
+                    })
+                    .catch((error) => {
+                        displayMessage('Error signing up user: ' + error.message, 'danger');
+                    });
+                }
+            });
+        });
+
+        // Function to display message
+        function displayMessage(message, type) {
+            var messageElement = document.getElementById('signupMessage');
+            messageElement.textContent = message;
+            messageElement.className = 'alert alert-' + type;
+            messageElement.classList.remove('d-none'); // Show the message element
+        }
+    </script>
+
+    <%- include("partials/footer.ejs") %>
+</body>
+</html>
+
+
+

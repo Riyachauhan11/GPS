@@ -1,0 +1,567 @@
+<%- include("partials/front_pg_header.ejs") %>
+
+<body>
+  <div class="center-items">
+    <h2>Check geofenced events of registered users</h2>
+    <div id="map-canvas" style="height: 2500px; width: 1000px"></div>
+    <div class="controls">
+      <div class="controls-row">
+        <div class="control-item">
+          <h4>1. Select User:</h4>
+          <select id="userSelect" class="styled-select">
+            <option value="" disabled selected>Select User</option>
+          </select>
+        </div>
+        <div class="control-item">
+          <h4>2. Select Date Range:</h4>
+          <input type="date" id="fromDate" class="styled-input" />
+          <input type="date" id="toDate" class="styled-input" />
+        </div>
+        <div class="control-item">
+          <h4>3. Select geofenced area:</h4>
+          <select id="geofenceSelect" class="styled-select">
+            <option value="" disabled selected>Select Geofenced Area</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: block">
+      <button id="fetchButton" class="styled-button">Fetch Data</button>
+      <button id="stopButton" class="styled-button" style="display: none">
+        Clear User's tracking
+      </button>
+    </div>
+
+    <div class="container mt-5">
+      <div class="row">
+        <div class="col-12">
+          <div
+            id="dataTableContainer"
+            class="table-responsive"
+            style="display: none"
+          >
+            <h3 style="text-align: center">Geofenced Events Data</h3>
+            <div
+              id="fetchedDataInfo"
+              style="text-align: center; margin-bottom: 20px"
+            >
+              <!-- Username, Vehicle, and Geofencing area will be displayed here -->
+            </div>
+            <table id="dataTable" class="table table-bordered table-striped">
+              <thead class="thead-dark">
+                <tr>
+                  <th class="user-id">User ID</th>
+                  <th class="polygon-id">Polygon ID</th>
+                  <th class="approval-time">Polygon Approval Time</th>
+                  <th class="exit-time">Exit Time</th>
+                  <th class="reentry-time">Re-entry Time</th>
+                </tr>
+              </thead>
+              <tbody id="dataBody">
+                <!-- Data rows will be populated here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase App (the core Firebase SDK) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+  <!-- Google Maps API -->
+  <script
+    type="text/javascript"
+    src="https://maps.googleapis.com/maps/api/js?key=GOOGLE_MAPS_API&libraries=drawing"
+  ></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "enter api key",
+      authDomain: "enter authDomain",
+      databaseURL: "....",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: "",
+      measurementId: "",
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    var db = firebase.database();
+    var positionRefs = [];
+    var curr_username;
+    var current_userId;
+    var user_vehicle;
+    var curr_polygonName;
+    var current_geofenceId;
+    var poly_timestamp;
+
+    function fetchUserIDs() {
+      var usersRef = db.ref("users");
+      usersRef.once("value", function (snapshot) {
+        var userSelect = document.getElementById("userSelect");
+        snapshot.forEach(function (childSnapshot) {
+          var userId = childSnapshot.key;
+          var userData = childSnapshot.val();
+          var username = userData.username; // Assuming usernames are stored under userID
+          var vehicle = userData.vehicle;
+
+          var option = document.createElement("option");
+          option.value = `${userId},${vehicle},${username}`;
+          option.text = username; // Display username in the dropdown
+          userSelect.appendChild(option);
+        });
+      });
+    }
+
+    function formatTimestamp(timestamp) {
+      var date = new Date(timestamp);
+      return date.toLocaleString();
+    }
+
+    // Function to fetch geofenced areas and populate the dropdown
+    function fetchGeofencedAreas() {
+      var polygonsRef = db.ref("polygons");
+      polygonsRef.once("value", function (snapshot) {
+        var geofenceSelect = document.getElementById("geofenceSelect");
+        snapshot.forEach(function (childSnapshot) {
+          var polygonId = childSnapshot.key;
+          var polygonData = childSnapshot.val();
+          var timestamp = polygonData.timestamp;
+          var name = polygonData.locationName;
+          var formattedTimestamp = formatTimestamp(timestamp);
+
+          var option = document.createElement("option");
+          option.value = `${polygonId},${formattedTimestamp},${name}`;
+          option.text = polygonData.locationName;
+          geofenceSelect.appendChild(option);
+        });
+      });
+    }
+
+    // Fetch user IDs and geofenced areas on page load
+    window.onload = function () {
+      fetchUserIDs();
+      fetchGeofencedAreas();
+    };
+
+    document
+      .getElementById("fetchButton")
+      .addEventListener("click", function () {
+        fetchAndDisplayData();
+      });
+
+    document
+      .getElementById("userSelect")
+      .addEventListener("change", function () {
+        var data = this.value.split(","); // Split value by comma to separate userId and vehicle
+        current_userId = data[0]; // First part is userId
+        user_vehicle = data[1]; // Second part is vehicle
+        curr_username = data[2];
+
+        console.log("User ID:", current_userId);
+        console.log("User Vehicle:", user_vehicle);
+      });
+
+    document
+      .getElementById("geofenceSelect")
+      .addEventListener("change", function () {
+        var data = this.value.split(","); // Split value by comma to separate userId and vehicle
+        current_geofenceId = data[0]; // First part is userId
+        poly_timestamp = data[1] + data[2]; // Second part is vehicle
+        curr_polygonName = data[3];
+
+        console.log("poly ID:", current_geofenceId);
+        console.log("poly timestamp:", poly_timestamp);
+      });
+
+    function fetchAndDisplayData() {
+      var userName = document.getElementById("userSelect").value;
+      var fromDate = new Date(document.getElementById("fromDate").value);
+      var toDate = new Date(document.getElementById("toDate").value);
+      var geofenceName = document.getElementById("geofenceSelect").value;
+
+      // Format fromDate and toDate in yyyy/mm/dd format
+      var formattedFromDate = fromDate
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "/");
+      var formattedToDate = toDate
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "/");
+
+      if (!userName || !fromDate || !toDate || !geofenceName) {
+        alert(
+          "Please select User, Date Range, and Geofenced Area to fetch data."
+        );
+        return;
+      }
+
+      var dataTable = document.getElementById("dataTable");
+      var dataBody = document.getElementById("dataBody");
+      dataBody.innerHTML = ""; // Clear existing rows
+
+      // Reference to geofenceEvents for the current user and geofenceName
+      var eventsRef = db.ref(
+        `geofenceEvents/${current_userId}/${curr_polygonName}`
+      );
+
+      eventsRef.once("value", function (snapshot) {
+        snapshot.forEach(function (dateSnapshot) {
+          var eventDate = dateSnapshot.key;
+          var unformatDate = eventDate;
+          console.log(eventDate);
+          eventDate = eventDate.replace(/-/g, "/");
+
+          // Check if eventDate is within the selected date range
+          if (eventDate >= formattedFromDate && eventDate <= formattedToDate) {
+            var eventDateRef = db.ref(
+              `geofenceEvents/${current_userId}/${curr_polygonName}/${unformatDate}`
+            );
+            console.log("inside if");
+
+            eventDateRef.once("value", function (eventSnapshot) {
+              eventSnapshot.forEach(function (eventDataSnapshot) {
+                var eventData = eventDataSnapshot.val();
+                var exitTime = eventData.exitTime || "N/A";
+                var reentryTime = eventData.reentryTime || "N/A";
+
+                console.log("Exit Time:", exitTime);
+                console.log("Reentry Time:", reentryTime);
+
+                var row = `
+                                    <tr>
+                                        <td>${current_userId}</td>
+                                        <td>${current_geofenceId}</td>
+                                        <td>${poly_timestamp}</td>
+                                        <td>${formatTimestamp(exitTime)}</td>
+                                        <td>${formatTimestamp(reentryTime)}</td>
+                                    </tr>
+                                `;
+                dataBody.innerHTML += row;
+              });
+            });
+          }
+        });
+
+        var dataTableContainer = document.getElementById("dataTableContainer");
+        dataTableContainer.style.display = "block";
+
+        // Update fetched data information
+        var fetchedDataInfo = document.getElementById("fetchedDataInfo");
+        fetchedDataInfo.innerHTML = `
+                    <h4><strong>Username:</strong> ${curr_username}</h4>
+                    <h4><strong>Vehicle Used:</strong> ${user_vehicle}</h4>
+                    <h4><strong>Geofencing Area:</strong> ${curr_polygonName}</h4>
+                `;
+
+        // Show the clear button after fetching data
+        document.getElementById("stopButton").style.display = "inline-block";
+      });
+    }
+
+    document.getElementById("stopButton").addEventListener("click", () => {
+      console.log("button clicked");
+      var positionsRef = db.ref(`positions/${current_userId}`);
+      positionsRef.once("value", function (snapshot) {
+        snapshot.forEach(function (childSnapshot) {
+          childSnapshot.ref
+            .remove()
+            .then(() => {
+              console.log("Data deleted");
+            })
+            .catch((error) => {
+              console.error("Error deleting data:", error);
+            });
+        });
+      });
+    });
+
+    var mapOptions;
+    var map;
+    var coordinates = [];
+    let new_coordinates = [];
+    let lastElement;
+    var infoWindow;
+    var selectedShape;
+    var all_overlays = [];
+
+    function InitMap() {
+      var location = new google.maps.LatLng(28.620585, 77.228609);
+      mapOptions = {
+        zoom: 12,
+        center: location,
+        mapTypeId: google.maps.MapTypeId.ROADMAP,
+      };
+      map = new google.maps.Map(
+        document.getElementById("map-canvas"),
+        mapOptions
+      );
+
+      infoWindow = new google.maps.InfoWindow();
+
+      const locationButton = document.createElement("button");
+      locationButton.textContent = "Pan to Current Location";
+      locationButton.classList.add("custom-map-control-button");
+      map.controls[google.maps.ControlPosition.TOP_CENTER].push(locationButton);
+      locationButton.addEventListener("click", () => {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              pos = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+              };
+
+              infoWindow.setPosition(pos);
+              infoWindow.setContent("Location found.");
+              infoWindow.open(map);
+              map.setCenter(pos);
+            },
+            () => {
+              handleLocationError(true, infoWindow, map.getCenter());
+            }
+          );
+        } else {
+          handleLocationError(false, infoWindow, map.getCenter());
+        }
+      });
+
+      let isTracking = true;
+
+      var drawingManager = new google.maps.drawing.DrawingManager({
+        drawingControlOptions: {
+          position: google.maps.ControlPosition.TOP_CENTER,
+          drawingModes: [google.maps.drawing.OverlayType.POLYGON],
+        },
+        polygonOptions: {
+          clickable: true,
+          draggable: false,
+          editable: true,
+          fillColor: "#ADFF2F",
+          fillOpacity: 0.5,
+        },
+      });
+
+      function setSelection(shape) {
+        clearSelection();
+        selectedShape = shape;
+        shape.setEditable(true);
+      }
+
+      function deleteSelectedShape() {
+        if (selectedShape) {
+          // Remove the shape from the map
+          selectedShape.setMap(null);
+          drawingManager.setMap(map);
+          coordinates.splice(0, coordinates.length);
+
+          // Remove the polygon from the Firebase database
+          var polygonId = selectedShape.id;
+          if (polygonId) {
+            var polygonRef = db.ref("polygons/" + polygonId);
+            polygonRef
+              .remove()
+              .then(() => {
+                console.log(
+                  "Polygon with ID:",
+                  polygonId,
+                  "removed from Firebase"
+                );
+              })
+              .catch((error) => {
+                console.error("Error removing polygon from Firebase:", error);
+              });
+          }
+        }
+      }
+
+      function clearSelection() {
+        if (selectedShape) {
+          selectedShape.setEditable(false);
+          selectedShape = null;
+        }
+      }
+
+      map.addListener("click", () => {
+        clearSelection();
+      });
+
+      function CenterControl(controlDiv, map) {
+        var controlUI = document.createElement("div");
+        controlUI.style.backgroundColor = "#fff";
+        controlUI.style.border = "2px solid #fff";
+        controlUI.style.borderRadius = "3px";
+        controlUI.style.boxShadow = "0 2px 6px rgba(0,0,0,.3)";
+        controlUI.style.cursor = "pointer";
+        controlUI.style.marginBottom = "22px";
+        controlUI.style.textAlign = "center";
+        controlUI.title = "Select to delete the shape";
+        controlDiv.appendChild(controlUI);
+
+        var controlText = document.createElement("div");
+        controlText.style.color = "rgb(25,25,25)";
+        controlText.style.fontFamily = "Roboto,Arial,sans-serif";
+        controlText.style.fontSize = "16px";
+        controlText.style.lineHeight = "38px";
+        controlText.style.paddingLeft = "5px";
+        controlText.style.paddingRight = "5px";
+        controlText.innerHTML = "Delete Selected Area";
+        controlUI.appendChild(controlText);
+
+        controlUI.addEventListener("click", function () {
+          deleteSelectedShape();
+        });
+      }
+
+      function getPolygonCoords(newShape) {
+        coordinates.splice(0, coordinates.length);
+
+        var len = newShape.getPath().getLength();
+
+        for (var i = 0; i < len; i++) {
+          coordinates.push(newShape.getPath().getAt(i).toUrlValue(6));
+        }
+        promptForPolygonLocation(coordinates);
+      }
+
+      function promptForPolygonLocation(coordinates) {
+        var locationName = prompt("Enter the location name for the polygon:");
+
+        if (locationName) {
+          savePolygonToFirebase(coordinates, locationName);
+        } else {
+          alert(
+            "Location name is required to save the polygon else the polygon wont be displayed after refreshing the page."
+          );
+        }
+      }
+
+      function savePolygonToFirebase(coordinates, locationName) {
+        var newPolygonRef = db.ref("polygons").push();
+        var polygonId = newPolygonRef.key;
+        newPolygonRef
+          .set({
+            id: polygonId, // Save the polygon's unique identifier
+            coordinates: coordinates,
+            locationName: locationName, // Save the location name
+            timestamp: Date.now(),
+          })
+          .then(() => {
+            console.log(
+              "Polygon coordinates saved to Firebase with ID:",
+              polygonId
+            );
+          })
+          .catch((error) => {
+            console.error(
+              "Error saving polygon coordinates to Firebase:",
+              error
+            );
+          });
+      }
+
+      function fetchAndDrawPolygons() {
+        var polygonRef = db.ref("polygons");
+        polygonRef.once("value", function (snapshot) {
+          snapshot.forEach(function (childSnapshot) {
+            var polygonData = childSnapshot.val();
+            var coordinates = polygonData.coordinates.map(function (coord) {
+              var [lat, lng] = coord.split(",").map(Number);
+              return { lat: lat, lng: lng };
+            });
+
+            var polygon = new google.maps.Polygon({
+              paths: coordinates,
+              map: map,
+              clickable: true,
+              draggable: false,
+              editable: false,
+              fillColor: "#ADFF2F",
+              fillOpacity: 0.5,
+              id: polygonData.id, // Set the polygon's unique identifier
+            });
+
+            var label = new google.maps.InfoWindow({
+              content: polygonData.locationName,
+              position: coordinates[0],
+            });
+
+            label.open(map);
+
+            google.maps.event.addListener(polygon, "click", function () {
+              setSelection(polygon);
+            });
+
+            all_overlays.push({ overlay: polygon, type: "polygon" });
+          });
+        });
+      }
+
+      drawingManager.setMap(map);
+
+      google.maps.event.addListener(
+        drawingManager,
+        "polygoncomplete",
+        function (event) {
+          event.getPath().getLength();
+          google.maps.event.addListener(
+            event,
+            "dragend",
+            getPolygonCoords(event)
+          );
+
+          google.maps.event.addListener(
+            event.getPath(),
+            "insert_at",
+            function () {
+              getPolygonCoords(event);
+            }
+          );
+
+          google.maps.event.addListener(event.getPath(), "set_at", function () {
+            getPolygonCoords(event);
+          });
+        }
+      );
+
+      google.maps.event.addListener(
+        drawingManager,
+        "overlaycomplete",
+        function (event) {
+          all_overlays.push(event);
+          if (event.type !== google.maps.drawing.OverlayType.MARKER) {
+            drawingManager.setDrawingMode(null);
+
+            var newShape = event.overlay;
+            newShape.type = event.type;
+            google.maps.event.addListener(newShape, "click", function () {
+              setSelection(newShape);
+            });
+            setSelection(newShape);
+          }
+        }
+      );
+
+      var centerControlDiv = document.createElement("div");
+      var centerControl = new CenterControl(centerControlDiv, map);
+
+      centerControlDiv.index = 1;
+      map.controls[google.maps.ControlPosition.BOTTOM_CENTER].push(
+        centerControlDiv
+      );
+
+      fetchAndDrawPolygons();
+    }
+
+    InitMap();
+  </script>
+
+  <%- include("partials/footer.ejs") %>
+</body>
